@@ -7,15 +7,23 @@ use App\Models\City;
 
 class CityController extends Controller
 {
-    function index(Request $request)
+    public function index(Request $request)
     {
         $search = $request->input('search');
 
-        $cities = City::when($search, function ($query, $search) {
-            $query->where('city_name', 'like', "%{$search}%");
-        })->simplePaginate(5)->appends(['search' => $search]);
+        $cities = City::with(['reviews', 'hotels'])
+            ->when($search, function ($query, $search) {
+                $query->where('city_name', 'like', "%{$search}%");
+            })
+            ->paginate(5);
 
-        return view('cities.index', ['cities' => $cities]);
+        $totalResults = $cities->total();
+
+        return view('cities.index', [
+            'cities' => $cities,
+            'search' => $search,
+            'totalResults' => $totalResults,
+        ]);
     }
 
     function create()
@@ -28,19 +36,45 @@ class CityController extends Controller
         return view('cities.about');
     }
 
-    function store(Request $request)
+    public function store(Request $request)
     {
-        $city = new City();
-        $city->city_name = $request->city_name;
-        $city->tour_site_name = $request->tour_site_name;
-        $city->cost = $request->cost;
-        $city->save();
-        return redirect('/cities');
+        $validated = $request->validate([
+            'city_name' => 'required|string|max:255',
+            'tour_site_name' => 'required|string|max:255',
+            'cost' => 'required|numeric|min:0',
+            'rating' => 'required|integer|min:1|max:5',
+            'review_text' => 'required|string',
+            'hotels.*.hotel_name' => 'required|string|max:255',
+            'hotels.*.hotel_number' => 'required|string|max:255',
+        ]);
+
+        // Create the city record
+        $city = City::create([
+            'city_name' => $validated['city_name'],
+            'tour_site_name' => $validated['tour_site_name'],
+            'cost' => $validated['cost'],
+        ]);
+
+        // Create the review for the city
+        $city->reviews()->create([
+            'rating' => $validated['rating'],
+            'review_text' => $validated['review_text'],
+        ]);
+
+        // Create the hotels for the city
+        if (!empty($validated['hotels'])) {
+            foreach ($validated['hotels'] as $hotelData) {
+                $city->hotels()->create($hotelData);
+            }
+        }
+
+        return redirect('/cities')->with('success', 'City added successfully!');
     }
 
-    function show($id)
+
+    public function show($id)
     {
-        $city = City::find($id);
+        $city = City::with('hotels','reviews')->findOrFail($id);
         return view('cities.show', ['city' => $city]);
     }
 
@@ -50,24 +84,50 @@ class CityController extends Controller
         return view('cities.edit', ['city' => $city]);
     }
 
-    function update(Request $request, $id)
+    function update(Request $request, City $city)
     {
         $validated = $request->validate([
-            'city_name' => 'required|string|max:10',
-            'tour_site_name' => 'required|string|max:10',
-            'cost' => 'required|numeric|min:1',
+            'city_name' => 'required|string|max:255',
+            'tour_site_name' => 'required|string|max:255',
+            'cost' => 'required|numeric|min:0',
+            'rating' => 'required|numeric|min:1|max:5',
+            'review_text' => 'nullable|string|max:1000',
+            'hotels.*.hotel_name' => 'required|string|max:255',
+            'hotels.*.hotel_number' => 'required|string|max:255',
         ]);
 
-        $city = City::findOrFail($id);
+        // Update the city details
+        $city->update([
+            'city_name' => $validated['city_name'],
+            'tour_site_name' => $validated['tour_site_name'],
+            'cost' => $validated['cost'],
+        ]);
 
-        $city->city_name = $validated['city_name'];
-        $city->tour_site_name = $validated['tour_site_name'];
-        $city->cost = $validated['cost'];
+        // Update or create the first review for the city
+        $city->reviews()->updateOrCreate(
+            ['id' => $city->reviews->first()->id ?? null], // Find the first review if it exists
+            [
+                'rating' => $validated['rating'],
+                'review_text' => $validated['review_text'],
+            ]
+        );
+        // Process hotels
+        if (!empty($validated['hotels'])) {
+            foreach ($validated['hotels'] as $hotelId => $hotelData) {
+                $city->hotels()->updateOrCreate(
+                    ['id' => $hotelId],
+                    [
+                        'hotel_name' => $hotelData['hotel_name'],
+                        'hotel_number' => $hotelData['hotel_number'],
+                    ]
+                );
+            }
+        }
+        return redirect()->route('cities.show', $city)->with('success', 'City, reviews, and hotels updated successfully.');
 
-        $city->save();
-
-        return redirect('/cities');
     }
+
+
     function destroy($id)
     {
         $city = City::findOrFail($id);

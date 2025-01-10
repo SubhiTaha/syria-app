@@ -5,8 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
-{
-    /**
+{/**
      * Run the migrations.
      */
     public function up(): void
@@ -19,6 +18,9 @@ return new class extends Migration
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();
+            if (!Schema::hasColumn('users', 'role')) {
+                $table->string('role')->default('user');
+            }
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
@@ -42,8 +44,18 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
+        if (Schema::hasTable('users')) {
+            Schema::table('users', function (Blueprint $table) {
+                if (Schema::hasColumn('users', 'role')) {
+                    $table->dropColumn('role');
+                }
+            });
+
+            Schema::dropIfExists('users');
+        }
+
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }
+
 };

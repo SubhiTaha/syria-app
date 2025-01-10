@@ -3,7 +3,7 @@
 <head>
     <title>{{$title}}</title>
     <meta http-equiv="content-type" content="text/html;charset=utf-8" />
-    <link href="{{asset('css/style.css')}}" type="text/css" rel="stylesheet" />
+    <link href="{{ asset('css/style.css') }}?v={{ time() }}" rel="stylesheet" />
 </head>
 <body>
 <nav>
